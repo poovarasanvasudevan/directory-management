@@ -1,0 +1,568 @@
+openapi: 3.1.0
+info:
+  title: Directory Desk API
+  version: 0.3.0
+  description: Implemented directory, policy, report, administration, and typed configuration APIs. Unimplemented PRODUCT.md operations are intentionally absent.
+servers:
+  - url: /api/v1
+paths:
+  /admin/configuration/:
+    get:
+      summary: List audited configuration module definitions
+      responses:
+        "200":
+          description: Typed configuration module catalog
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [source, modules]
+                properties:
+                  source: { type: string, const: authenticated-demo-audit }
+                  modules: { type: array, items: { $ref: "#/components/schemas/ConfigurationDefinition" } }
+  /admin/configuration/{moduleID}:
+    get:
+      summary: Read a typed configuration module and its current values
+      parameters:
+        - { name: moduleID, in: path, required: true, schema: { type: string, pattern: "^[a-z0-9-]{1,64}$" } }
+      responses:
+        "200": { description: Configuration definition and current values }
+        "404": { description: Configuration module not found }
+    put:
+      summary: Validate and replace a configuration module's values
+      parameters:
+        - { name: moduleID, in: path, required: true, schema: { type: string, pattern: "^[a-z0-9-]{1,64}$" } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [values, version]
+              properties:
+                values: { type: object, additionalProperties: true }
+                version: { type: integer, format: int64, minimum: 0, description: Current revision used for optimistic concurrency }
+      responses:
+        "200": { description: Configuration validated and saved }
+        "404": { description: Configuration module not found }
+        "409": { description: A different administrator saved a newer revision }
+        "422": { description: Unknown field, invalid type, range, or option }
+  /admin/configuration/{moduleID}/history:
+    get:
+      summary: Read immutable saved revisions for a configuration module
+      parameters:
+        - { name: moduleID, in: path, required: true, schema: { type: string, pattern: "^[a-z0-9-]{1,64}$" } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 50, default: 10 } }
+      responses:
+        "200":
+          description: Reverse-chronological configuration revisions
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [moduleId, revisions, count]
+                properties:
+                  moduleId: { type: string }
+                  count: { type: integer }
+                  revisions:
+                    type: array
+                    items:
+                      type: object
+                      required: [version, values, modifiedBy, createdAt]
+                      properties:
+                        version: { type: integer, format: int64 }
+                        values: { type: object, additionalProperties: true }
+                        modifiedBy: { type: string }
+                        createdAt: { type: string, format: date-time }
+        "404": { description: Configuration module not found }
+  /admin/configuration/{moduleID}/restore:
+    post:
+      summary: Restore a saved revision as a new audited revision
+      parameters:
+        - { name: moduleID, in: path, required: true, schema: { type: string, pattern: "^[a-z0-9-]{1,64}$" } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetVersion, currentVersion]
+              properties:
+                targetVersion: { type: integer, format: int64, minimum: 1 }
+                currentVersion: { type: integer, format: int64, minimum: 1 }
+      responses:
+        "200": { description: Historical values restored as a new revision }
+        "400": { description: Invalid revision request }
+        "404": { description: Configuration module or revision not found }
+        "409": { description: Configuration changed before restoration completed }
+        "422": { description: Historical values are incompatible with the current schema }
+  /admin/policies/:
+    get:
+      summary: List self-service policies
+      responses:
+        "200": { description: Policy collection }
+    post:
+      summary: Create a self-service policy
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/PolicyInput" } } }
+      responses:
+        "201": { description: Policy created }
+        "422": { description: Policy validation failed }
+  /admin/policies/{policyID}:
+    put:
+      summary: Update a self-service policy
+      parameters:
+        - { name: policyID, in: path, required: true, schema: { type: integer, format: int64 } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/PolicyInput" } } }
+      responses:
+        "200": { description: Policy updated }
+        "404": { description: Policy not found }
+    delete:
+      summary: Delete a self-service policy
+      parameters:
+        - { name: policyID, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "204": { description: Policy deleted }
+        "404": { description: Policy not found }
+  /admin/policies/{policyID}/clone:
+    post:
+      summary: Clone a self-service policy
+      parameters:
+        - { name: policyID, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "201": { description: Policy cloned }
+        "404": { description: Policy not found }
+  /admin/users/:
+    get:
+      summary: Search directory users
+      parameters:
+        - { name: q, in: query, required: false, schema: { type: string, maxLength: 256 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        "200":
+          description: Directory user search results and write mode
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [users, count, writeEnabled]
+                properties:
+                  users: { type: array, items: { $ref: "#/components/schemas/DirectoryUser" } }
+                  count: { type: integer }
+                  writeEnabled: { type: boolean }
+        "502": { description: Directory search failed }
+  /admin/users/{userID}/password-reset:
+    post:
+      summary: Reset a directory user's password
+      description: Requires directory write mode and is always recorded in the audit store. The password is never logged.
+      parameters:
+        - { name: userID, in: path, required: true, schema: { type: string, pattern: "^[A-Za-z0-9._-]{1,128}$" } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string, minLength: 12, maxLength: 128, writeOnly: true }
+                forceChange: { type: boolean, default: true }
+      responses:
+        "200": { description: Password reset completed }
+        "403": { description: Directory writes are disabled }
+        "422": { description: Temporary password failed validation }
+        "502": { description: Directory password reset failed }
+  /admin/users/{userID}/unlock:
+    post:
+      summary: Unlock a directory user account
+      description: Requires directory write mode and is always recorded in the audit store.
+      parameters:
+        - { name: userID, in: path, required: true, schema: { type: string, pattern: "^[A-Za-z0-9._-]{1,128}$" } }
+      responses:
+        "200": { description: Account unlock completed }
+        "403": { description: Directory writes are disabled }
+        "502": { description: Directory unlock failed }
+  /admin/audit-events/:
+    get:
+      summary: Search administrative audit events
+      parameters:
+        - { name: q, in: query, required: false, schema: { type: string } }
+        - { name: action, in: query, required: false, schema: { type: string } }
+        - { name: outcome, in: query, required: false, schema: { type: string, enum: [success, failure] } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        "200":
+          description: Reverse-chronological audit events
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [events, count]
+                properties:
+                  events: { type: array, items: { $ref: "#/components/schemas/AuditEvent" } }
+                  count: { type: integer }
+  /admin/settings/{section}:
+    get:
+      summary: Read one administration settings section
+      parameters:
+        - { name: section, in: path, required: true, schema: { type: string, maxLength: 64 } }
+      responses:
+        "200": { description: Settings section }
+        "404": { description: Settings section not found }
+    put:
+      summary: Replace one administration settings section
+      parameters:
+        - { name: section, in: path, required: true, schema: { type: string, maxLength: 64 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [settings]
+              properties: { settings: { type: object, additionalProperties: true } }
+      responses:
+        "200": { description: Settings saved }
+  /admin/capabilities/:
+    get:
+      summary: List audited product capabilities and implementation status
+      responses:
+        "200":
+          description: Capability catalog
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CapabilityCatalog" }
+  /admin/reports/:
+    get:
+      summary: List available reports
+      responses:
+        "200": { description: Report catalog }
+  /admin/reports/{reportID}:
+    get:
+      summary: Run a report
+      parameters:
+        - { name: reportID, in: path, required: true, schema: { type: string, pattern: "^[a-z0-9-]{1,64}$" } }
+        - { name: q, in: query, required: false, schema: { type: string } }
+      responses:
+        "200": { description: Report columns and rows, including the data source }
+        "404": { description: Report not found }
+  /admin/reports/{reportID}/export:
+    get:
+      summary: Export a report as CSV
+      parameters:
+        - { name: reportID, in: path, required: true, schema: { type: string, pattern: "^[a-z0-9-]{1,64}$" } }
+        - { name: q, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: CSV report
+          content: { text/csv: { schema: { type: string } } }
+  /admin/directories/config:
+    get:
+      summary: Read sanitized configured directory
+      responses:
+        "200":
+          description: Sanitized directory configuration
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DirectoryConfigResponse" }
+  /admin/directories/test:
+    post:
+      summary: Test the configured directory connection
+      responses:
+        "200":
+          description: Connection succeeded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConnectionResult" }
+        "502": { description: Directory connection failed }
+  /admin/directories/organizational-units:
+    get:
+      summary: List organizational units
+      responses:
+        "200":
+          description: Organizational units
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [organizationalUnits]
+                properties:
+                  organizationalUnits: { type: array, items: { $ref: "#/components/schemas/OrganizationalUnit" } }
+  /admin/directories/browse:
+    get:
+      summary: List one-level children under a directory DN
+      parameters:
+        - { name: parent, in: query, required: false, schema: { type: string }, description: Parent DN; defaults to configured base DN }
+        - { name: limit, in: query, required: false, schema: { type: integer } }
+      responses:
+        "200": { description: Directory nodes under the parent }
+        "502": { description: Directory browse failed }
+  /admin/directories/entry:
+    get:
+      summary: Read a directory entry and allowlisted attributes
+      parameters:
+        - { name: dn, in: query, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Directory entry detail }
+        "404": { description: Entry not found }
+  /admin/directories/entry/attributes:
+    put:
+      summary: Replace allowlisted attributes on a directory entry
+      parameters:
+        - { name: dn, in: query, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [attributes]
+              properties:
+                attributes: { type: object, additionalProperties: { type: string } }
+      responses:
+        "200": { description: Updated entry }
+        "403": { description: Directory writes disabled }
+        "422": { description: Attribute validation failed }
+  /admin/directories/entry/enabled:
+    post:
+      summary: Enable or disable a directory user account
+      parameters:
+        - { name: dn, in: query, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+      responses:
+        "200": { description: Account enablement updated }
+        "403": { description: Directory writes disabled }
+  /admin/directories/entry/member-of:
+    get:
+      summary: List groups a directory entry belongs to
+      parameters:
+        - { name: dn, in: query, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Group memberships }
+  /admin/directories/users:
+    post:
+      summary: Create a directory user under a parent OU
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [parentDN, name]
+              properties:
+                parentDN: { type: string }
+                name: { type: string }
+                password: { type: string }
+                attributes: { type: object, additionalProperties: { type: string } }
+      responses:
+        "201": { description: User created }
+        "403": { description: Directory writes disabled }
+  /admin/directories/groups:
+    get:
+      summary: Search directory groups
+      parameters:
+        - { name: q, in: query, required: false, schema: { type: string } }
+      responses:
+        "200": { description: Matching groups }
+    post:
+      summary: Create a directory group under a parent OU
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [parentDN, name]
+              properties:
+                parentDN: { type: string }
+                name: { type: string }
+                description: { type: string }
+      responses:
+        "201": { description: Group created }
+        "403": { description: Directory writes disabled }
+  /admin/directories/group/members:
+    get:
+      summary: List members of a directory group
+      parameters:
+        - { name: dn, in: query, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Group members }
+    post:
+      summary: Add a member to a directory group
+      parameters:
+        - { name: dn, in: query, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [memberDN]
+              properties:
+                memberDN: { type: string }
+      responses:
+        "200": { description: Member added }
+        "403": { description: Directory writes disabled }
+    delete:
+      summary: Remove a member from a directory group
+      parameters:
+        - { name: dn, in: query, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [memberDN]
+              properties:
+                memberDN: { type: string }
+      responses:
+        "200": { description: Member removed }
+        "403": { description: Directory writes disabled }
+components:
+  schemas:
+    ConfigurationOption:
+      type: object
+      required: [value, label]
+      properties:
+        value: { type: string }
+        label: { type: string }
+    ConfigurationField:
+      type: object
+      required: [key, label, type, default]
+      properties:
+        key: { type: string }
+        label: { type: string }
+        description: { type: string }
+        type: { type: string, enum: [boolean, text, number, select, textarea] }
+        required: { type: boolean }
+        min: { type: number }
+        max: { type: number }
+        options: { type: array, items: { $ref: "#/components/schemas/ConfigurationOption" } }
+        default: {}
+    ConfigurationSection:
+      type: object
+      required: [id, title, fields]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        description: { type: string }
+        fields: { type: array, items: { $ref: "#/components/schemas/ConfigurationField" } }
+    ConfigurationDefinition:
+      type: object
+      required: [id, group, title, description, sections]
+      properties:
+        id: { type: string }
+        group: { type: string }
+        title: { type: string }
+        description: { type: string }
+        sections: { type: array, items: { $ref: "#/components/schemas/ConfigurationSection" } }
+    PolicyInput:
+      type: object
+      required: [name, scope, domain, permissions, status]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        scope: { type: string, minLength: 1 }
+        domain: { type: string, minLength: 1 }
+        permissions:
+          type: array
+          minItems: 1
+          items: { type: string, enum: [Reset Password, Unlock Account, Self Update, Change Password] }
+        status: { type: string, enum: [Active, Paused, Review] }
+    DirectoryUser:
+      type: object
+      required: [id, displayName, email, distinguishedName, organizationalUnit, enabled, locked, passwordExpired]
+      properties:
+        id: { type: string }
+        displayName: { type: string }
+        email: { type: string }
+        distinguishedName: { type: string }
+        organizationalUnit: { type: string }
+        enabled: { type: boolean }
+        locked: { type: boolean }
+        passwordExpired: { type: boolean }
+        lastLogon: { type: string, format: date-time }
+    AuditEvent:
+      type: object
+      required: [id, actor, action, targetType, targetId, outcome, occurredAt]
+      properties:
+        id: { type: integer, format: int64 }
+        actor: { type: string }
+        action: { type: string }
+        targetType: { type: string }
+        targetId: { type: string }
+        outcome: { type: string, enum: [success, failure] }
+        requestId: { type: string }
+        sourceIp: { type: string }
+        metadata: { type: object, additionalProperties: true }
+        occurredAt: { type: string, format: date-time }
+    CapabilityCatalog:
+      type: object
+      required: [source, version, capabilities]
+      properties:
+        source: { type: string, const: product-audit }
+        version: { type: string }
+        capabilities:
+          type: array
+          items: { $ref: "#/components/schemas/Capability" }
+    Capability:
+      type: object
+      required: [id, group, name, description, status, features]
+      properties:
+        id: { type: string }
+        group: { type: string }
+        name: { type: string }
+        description: { type: string }
+        status: { type: string, enum: [available, configured, monitored, review, planned] }
+        features: { type: array, items: { type: string } }
+    Directory:
+      type: object
+      required: [mode, name, host, port, security, baseDN, bindDN, userSearchBase, groupSearchBase]
+      properties:
+        mode: { type: string, enum: [mock, ldap] }
+        name: { type: string }
+        host: { type: string }
+        port: { type: integer }
+        security: { type: string, enum: [ldap, ldaps, starttls] }
+        baseDN: { type: string }
+        bindDN: { type: string }
+        userSearchBase: { type: string }
+        groupSearchBase: { type: string }
+    DirectoryConfigResponse:
+      type: object
+      required: [directory, credentialsConfigured, tlsVerification]
+      properties:
+        directory: { $ref: "#/components/schemas/Directory" }
+        credentialsConfigured: { type: boolean }
+        tlsVerification: { type: boolean }
+    ConnectionResult:
+      type: object
+      required: [status, message, latencyMs]
+      properties:
+        status: { type: string, const: connected }
+        message: { type: string }
+        latencyMs: { type: integer, format: int64 }
+    OrganizationalUnit:
+      type: object
+      required: [name, distinguishedName]
+      properties:
+        name: { type: string }
+        distinguishedName: { type: string }
+    Error:
+      type: object
+      required: [code, message, requestId]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        requestId: { type: string }

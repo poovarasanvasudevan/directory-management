@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-14T00:00:00+05:30",
+  "title": "Design System: Directory Desk",
+  "extensions": {
+    "colorMeta": {
+      "primary": { "role": "primary", "displayName": "Directory Navy", "canonical": "#12344d" },
+      "accent": { "role": "primary", "displayName": "Action Cobalt", "canonical": "#2c5cc5" },
+      "brand": { "role": "secondary", "displayName": "Healthy Teal", "canonical": "#00a886" },
+      "paper": { "role": "neutral", "displayName": "Cool Paper", "canonical": "#f5f7f9" }
+    },
+    "typographyMeta": {
+      "body": { "displayName": "Space Grotesk", "purpose": "All interface text and operational data." }
+    },
+    "shadows": [
+      { "name": "status-strip", "value": "0 10px 30px color-mix(in srgb, var(--kf-ink) 7%, transparent)", "purpose": "Ambient separation for the top-level status strip only." }
+    ],
+    "motion": [
+      { "name": "page-entry", "value": "220ms cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "One restrained transition when changing primary screens." }
+    ],
+    "breakpoints": [
+      { "name": "grid-collapse", "value": "980px" },
+      { "name": "mobile-shell", "value": "700px" },
+      { "name": "compact-mobile", "value": "480px" }
+    ]
+  },
+  "components": [],
+  "narrative": {
+    "northStar": "The Control Ledger",
+    "overview": "A compact, calm identity operations console governed by KiteFrame components and semantic state.",
+    "keyCharacteristics": ["compact density", "clear operational hierarchy", "restrained semantic color", "explicit state"],
+    "rules": [{ "name": "Semantic Color", "body": "Color communicates action, focus, or state; it is not decoration.", "section": "colors" }],
+    "dos": ["Keep actions adjacent to affected data", "Label illustrative data", "Preserve keyboard-visible focus"],
+    "donts": ["Do not hardcode feature colors", "Do not inflate operations screens into marketing layouts"]
+  }
+}

@@ -1,0 +1,30 @@
+app:
+  environment: "development"
+
+server:
+  address: ":8080"
+  readTimeout: 15s
+  writeTimeout: 30s
+  requestTimeout: 30s
+
+database:
+  dsn: "root:12345Welcome@tcp(127.0.0.1:3306)/directory_desk?parseTime=true&multiStatements=true"
+
+redis:
+  address: "redis://:ZtpPmXoDq71qWpnngs@10.165.135.192:6379/0"
+
+activeDirectory:
+  mode: "ldap"
+  name: "Northstar Directory"
+  host: "CH1158.local"
+  port: 636
+  security: "ldaps"
+  skipTLSVerify: true  # testing only: allow self-signed / non-compliant AD certs
+  writeEnabled: true
+  baseDN: "dc=example,dc=com"
+  bindDN: "CN=KiteApps"
+  bindPassword: "poosan"
+  # Discovered from live LDAP: users are inetOrgPerson under ou=People (no Groups OU exists).
+  userSearchBase: "ou=People,dc=example,dc=com"
+  groupSearchBase: "dc=example,dc=com"
+  connectTimeout: 10s
